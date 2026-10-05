@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel P3 - 7ª RPM - PMMG</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        body { 
+            background-color: #040d1a;
+            background-image: 
+                linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+                linear-gradient(rgba(8, 18, 35, 0.92), rgba(4, 10, 20, 0.95)), 
+                url('assets/INSÍGNIA EM 7ª RPM.png'); 
+            background-size: 30px 30px, 30px 30px, cover, cover;
+            background-position: center; 
+            color: #f8fafc; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        .header { 
+            background-color: rgba(11, 27, 51, 0.95); 
+            border-bottom: 4px solid #f59e0b; 
+            padding: 15px 40px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8); 
+        }
+
+        .logo-area { display: flex; align-items: center; gap: 20px; }
+        .logo-area img { height: 75px; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.4)); }
+        .logo-area h1 { font-size: 28px; color: #ffffff; letter-spacing: 1px; font-weight: 700; text-transform: uppercase; }
+        
+        .clock-area { text-align: right; }
+        #data-atual { font-size: 30px; font-weight: bold; color: #f59e0b; text-transform: uppercase; display: block; text-shadow: 0 0 10px rgba(245,158,11,0.3); }
+        #relogio { font-size: 20px; color: #cbd5e1; font-weight: 600; }
+
+        .main-content { padding: 20px 40px; flex: 1; display: grid; grid-template-columns: 3fr 1fr; gap: 30px; height: calc(100vh - 108px); }
+        .left-column { display: flex; flex-direction: column; gap: 20px; height: 100%; }
+        
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .section-title { font-size: 19px; color: #38bdf8; border-left: 4px solid #38bdf8; padding-left: 10px; font-weight: 700; text-transform: uppercase; text-shadow: 0 0 8px rgba(56,189,248,0.4); }
+        #modo-indicador { font-size: 13px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 5px 15px; border-radius: 20px; font-weight: bold; border: 1px solid #38bdf8; box-shadow: 0 0 10px rgba(56,189,248,0.3); }
+        
+        .chart-container, .table-container, .calendar-container { 
+            background: rgba(15, 23, 42, 0.88); 
+            backdrop-filter: blur(10px);
+            border-radius: 12px; 
+            padding: 18px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8), inset 0 1px 1px rgba(56,189,248,0.3); 
+            border: 1px solid rgba(56, 189, 248, 0.3); 
+        }
+        .chart-container { height: 340px; position: relative; overflow: hidden; }
+        
+        #escudo-transicao {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            height: 180px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.6s ease-in-out;
+            z-index: 5;
+            filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.6));
+        }
+        #escudo-transicao.ativo {
+            opacity: 0.25;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        #msg-grafico { position: absolute; top: 15px; right: 20px; font-size: 12px; color: #f59e0b; font-weight: bold; text-align: right; z-index: 10; }
+        
+        .table-wrapper { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+        .table-container { height: 100%; overflow-y: auto; padding: 0; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        thead { background-color: #1e3a8a; color: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        th, td { padding: 12px 18px; font-size: 16px; }
+        tbody tr { border-bottom: 1px solid rgba(255,255,255,0.06); }
+        tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.02); }
+        
+        /* Calendário Clicável com Navegação de Mês/Ano */
+        .calendar-container { margin-top: 5px; padding: 20px; }
+        .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .calendar-header { font-size: 20px; font-weight: bold; text-transform: capitalize; color: #38bdf8; }
+        .btn-mes { background: #1e3a8a; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-mes:hover { background: #3b82f6; }
+
+        .calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-weight: bold; color: #94a3b8; margin-bottom: 12px; font-size: 15px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+        .calendar-day { background-color: rgba(11, 27, 51, 0.9); padding: 14px 0; text-align: center; border-radius: 8px; font-size: 18px; font-weight: bold; position: relative; cursor: pointer; transition: all 0.2s; border: 1px solid rgba(56,189,248,0.1); }
+        .calendar-day:hover { background-color: rgba(56, 189, 248, 0.3); transform: scale(1.06); box-shadow: 0 0 10px rgba(56,189,248,0.5); }
+        .calendar-day.empty { background: transparent; cursor: default; border: none; }
+        .calendar-day.today { background: #38bdf8; color: #0b1b33; font-weight: bold; box-shadow: 0 0 15px #38bdf8; }
+        .calendar-day.has-task { border: 2px solid #f59e0b; box-shadow: 0 0 12px rgba(245, 158, 11, 0.8); color: #f59e0b; }
+        
+        #btn-limpar-filtro { display: none; background: #38bdf8; color: #0b1b33; border: none; padding: 3px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px; margin-left: 8px; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-area">
+            <img src="assets/ESCUDO EM 7ª RPM.png" alt="Escudo PMMG">
+            <h1>Agenda Seção Emprego Operacional - 7ª RPM</h1>
+        </div>
+        <div class="clock-area">
+            <span id="data-atual"></span>
+            <span id="relogio"></span>
+        </div>
+    </header>
+    <main class="main-content">
+        <div class="left-column">
+            <div>
+                <div class="section-header">
+                    <h2 class="section-title">Acompanhamento GDO e Metas (7ª RPM)</h2>
+                    <span id="modo-indicador">Modo Tático Ativo</span>
+                </div>
+                <div class="chart-container">
+                    <img id="escudo-transicao" src="assets/ESCUDO EM 7ª RPM.png" alt="Escudo Transição">
+                    <div id="msg-grafico"></div>
+                    <canvas id="graficoCrimes"></canvas>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <div class="section-header" style="margin-bottom: 5px;">
+                    <h2 class="section-title" style="margin-bottom:0;">Próximos Eventos e Reuniões <button id="btn-limpar-filtro" onclick="mostrarTodosEventos()">Ver Todos</button></h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Data</th><th>Horário</th><th>Tipo</th><th>Assunto</th><th>Local</th><th>Participantes</th></tr></thead>
+                        <tbody id="agenda-tbody"><tr><td colspan="6" style="text-align: center;">A carregar agenda...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <aside class="sidebar-section">
+            <div class="calendar-container">
+                <div class="calendar-nav">
+                    <button class="btn-mes" onclick="mudarMes(-1)">◀</button>
+                    <div class="calendar-header" id="mes-ano-calendario"></div>
+                    <button class="btn-mes" onclick="mudarMes(1)">▶</button>
+                </div>
+                <div class="calendar-weekdays"><span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span></div>
+                <div class="calendar-grid" id="calendario-dias"></div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        Chart.register(window.ChartDataLabels);
+
+        const SUPABASE_URL = 'https://cxzmlfdywswnyeejgxdy.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_URMDJBv-xW1wmHyaqCE0dA_PzFUsbka';
+
+        let supabaseApp = null;
+        try {
+            supabaseApp = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+        } catch(e) { console.error(e); }
+
+        let listaGlobalEventos = [];
+        let dataAtualCalendario = new Date(); // Controla o mês e ano exibidos no calendário
+
+        function atualizarRelogio() {
+            const agora = new Date();
+            document.getElementById('relogio').innerText = agora.toLocaleTimeString('pt-BR');
+            document.getElementById('data-atual').innerText = agora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        }
+        setInterval(atualizarRelogio, 1000); atualizarRelogio();
+
+        function renderizarCalendario() {
+            const ano = dataAtualCalendario.getFullYear();
+            const mes = dataAtualCalendario.getMonth();
+            
+            document.getElementById('mes-ano-calendario').innerText = dataAtualCalendario.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+            
+            const datasComReuniao = listaGlobalEventos.map(i => i.data);
+            const primeiroDia = new Date(ano, mes, 1).getDay();
+            const totalDias = new Date(ano, mes + 1, 0).getDate();
+            const grid = document.getElementById('calendario-dias');
+            grid.innerHTML = '';
+            
+            for (let i = 0; i < primeiroDia; i++) grid.innerHTML += `<div class="calendar-day empty"></div>`;
+            
+            const hoje = new Date();
+            for (let dia = 1; dia <= totalDias; dia++) {
+                const dataF = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+                let classes = 'calendar-day';
+                if (dia === hoje.getDate() && mes === hoje.getMonth() && ano === hoje.getFullYear()) classes += ' today';
+                if (datasComReuniao.includes(dataF)) classes += ' has-task';
+                
+                grid.innerHTML += `<div class="${classes}" onclick="filtrarPorData('${dataF}')">${dia}</div>`;
+            }
+        }
+
+        function mudarMes(direcao) {
+            dataAtualCalendario.setMonth(dataAtualCalendario.getMonth() + direcao);
+            renderizarCalendario();
+        }
+
+        function desenharTabela(eventos) {
+            const tbody = document.getElementById('agenda-tbody');
+            if (!eventos || eventos.length === 0) { 
+                tbody.innerHTML = `<tr><td colspan="6" align="center" style="color: #94a3b8;">Nenhum evento encontrado para esta seleção.</td></tr>`; 
+                return; 
+            }
+            tbody.innerHTML = '';
+            eventos.forEach(item => {
+                let cor = item.tipo_evento === 'Operação' ? '#ef4444' : (item.tipo_evento === 'Instrução' ? '#22c55e' : '#f59e0b');
+                let badge = `<span style="background:${cor}; color:#000; padding:3px 10px; border-radius:10px; font-size:12px; font-weight:800; box-shadow: 0 0 8px ${cor};">${item.tipo_evento||'REUNIÃO'}</span>`;
+                tbody.innerHTML += `<tr><td><strong>${item.data.split('-').reverse().join('/')}</strong></td><td><span style="color:#f59e0b;font-weight:bold;">${item.horario}</span></td><td>${badge}</td><td>${item.assunto}</td><td>${item.local}</td><td>${item.participantes}</td></tr>`;
+            });
+        }
+
+        function filtrarPorData(dataSelecionada) {
+            const eventosFiltrados = listaGlobalEventos.filter(i => i.data === dataSelecionada);
+            desenharTabela(eventosFiltrados);
+            document.getElementById('btn-limpar-filtro').style.display = 'inline-block';
+        }
+
+        function mostrarTodosEventos() {
+            desenharTabela(listaGlobalEventos);
+            document.getElementById('btn-limpar-filtro').style.display = 'none';
+        }
+
+        async function iniciarAgenda() {
+            if(!supabaseApp) return;
+            try {
+                const { data, error } = await supabaseApp.from('reunioes').select('*').order('data').order('horario');
+                if (error) throw error;
+                listaGlobalEventos = data || [];
+                renderizarCalendario();
+                desenharTabela(listaGlobalEventos);
+            } catch (err) { 
+                console.error(err); 
+                document.getElementById('agenda-tbody').innerHTML = `<tr><td colspan="6" align="center" style="color: #ef4444;">Erro a ler a base de dados.</td></tr>`; 
+            }
+        }
+        iniciarAgenda();
+
+        const metas7RPM = {
+            MV: [13.47, 12.41, 11.67, 14.05, 12.94, 11.27, 11.01, 13.70, 14.61, 13.32, 13.73, 11.83],
+            CVPE: [18.80, 17.04, 16.93, 20.18, 16.35, 13.17, 14.02, 15.81, 15.11, 15.79, 16.21, 17.60],
+            CVPA: [68.14, 57.15, 57.26, 55.55, 57.59, 54.89, 50.57, 50.42, 50.33, 53.51, 55.83, 56.75]
+        };
+
+        function carregarCSV(caminho) {
+            return new Promise((resolve) => {
+                Papa.parse(caminho, { 
+                    download: true, header: true, delimiter: ";", skipEmptyLines: true, encoding: "ISO-8859-1", 
+                    complete: res => resolve(res.data), 
+                    error: () => resolve([]) 
+                });
+            });
+        }
+
+        function contarMeses(dados) {
+            if (!dados || dados.length === 0) return [0,0,0,0,0,0,0,0,0,0,0,0];
+            let contagem = { 'JANEIRO':0, 'FEVEREIRO':0, 'MARCO':0, 'ABRIL':0, 'MAIO':0, 'JUNHO':0, 'JULHO':0, 'AGOSTO':0, 'SETEMBRO':0, 'OUTUBRO':0, 'NOVEMBRO':0, 'DEZEMBRO':0 };
+            dados.forEach(linha => {
+                if (linha['MES_DESCRICAO']) {
+                    let m = linha['MES_DESCRICAO'].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "").trim();
+                    if (contagem[m] !== undefined) contagem[m]++;
+                }
+            });
+            return Object.values(contagem);
+        }
+
+        function estilizarBarrasModernas(valores, metas, ctx) {
+            let ultimoMesComDado = -1;
+            for(let i=0; i<valores.length; i++) { if(valores[i] > 0) ultimoMesComDado = i; }
+
+            return valores.map((valor, index) => {
+                if (valor === 0) return 'rgba(0,0,0,0)';
+                let estourou = (index <= ultimoMesComDado) && (valor > metas[index]);
+                const gradiente = ctx.createLinearGradient(0, 0, 0, 300);
+                if (estourou) {
+                    gradiente.addColorStop(0, '#f87171'); 
+                    gradiente.addColorStop(1, '#991b1b');
+                } else {
+                    gradiente.addColorStop(0, '#4ade80'); 
+                    gradiente.addColorStop(1, '#166534');
+                }
+                return gradiente;
+            });
+        }
+
+        async function iniciarGraficos() {
+            const ctx = document.getElementById('graficoCrimes').getContext('2d');
+            const msgBox = document.getElementById('msg-grafico');
+            const modoTexto = document.getElementById('modo-indicador');
+            const escudoTransicao = document.getElementById('escudo-transicao');
+            let avisos = [];
+
+            const mv = await carregarCSV('dados/mv.csv');
+            if(mv.length === 0) avisos.push('mv.csv não encontrado');
+            const cvpe = await carregarCSV('dados/cvpe.csv');
+            if(cvpe.length === 0) avisos.push('cvpe.csv não encontrado');
+            const cvpa = await carregarCSV('dados/cvpa.csv');
+            if(cvpa.length === 0) avisos.push('cvpa.csv não encontrado');
+
+            if (avisos.length > 0) {
+                msgBox.innerHTML = '⚠️ Faltam ficheiros em dados/:<br>' + avisos.join('<br>');
+            }
+
+            const dadosMV = contarMeses(mv);
+            const dadosCVPE = contarMeses(cvpe);
+            const dadosCVPA = contarMeses(cvpa);
+
+            const coresMV = estilizarBarrasModernas(dadosMV, metas7RPM.MV, ctx);
+            const coresCVPE = estilizarBarrasModernas(dadosCVPE, metas7RPM.CVPE, ctx);
+            const coresCVPA = estilizarBarrasModernas(dadosCVPA, metas7RPM.CVPA, ctx);
+
+            const dataLabelsConfig = {
+                color: '#ffffff',
+                anchor: 'end',
+                align: 'top',
+                font: { size: 11, weight: 'bold' }
+            };
+
+            const dsMV = { label: 'MV (Morte)', data: dadosMV, backgroundColor: coresMV, borderRadius: 6, datalabels: { ...dataLabelsConfig, formatter: (val) => val > 0 ? 'MV\n' + val : '' } };
+            const dsCVPE = { label: 'CVPE (Pessoa)', data: dadosCVPE, backgroundColor: coresCVPE, borderRadius: 6, datalabels: { ...dataLabelsConfig, formatter: (val) => val > 0 ? 'CVPE\n' + val : '' } };
+            const dsCVPA = { label: 'CVPA (Patrimônio)', data: dadosCVPA, backgroundColor: coresCVPA, borderRadius: 6, datalabels: { ...dataLabelsConfig, formatter: (val) => val > 0 ? 'CVPA\n' + val : '' } };
+
+            const modos = [
+                { nome: "👁️ Visão Geral (GDO 7ª RPM)", datasets: [dsMV, dsCVPE, dsCVPA] },
+                { nome: "🎯 Foco: MV (Mortes Violentas)", datasets: [dsMV] },
+                { nome: "🎯 Foco: CVPE (Crimes contra a Pessoa)", datasets: [dsCVPE] },
+                { nome: "🎯 Foco: CVPA (Crimes contra o Patrimônio)", datasets: [dsCVPA] }
+            ];
+
+            let indiceModo = 0;
+
+            const meuGrafico = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
+                    datasets: modos[0].datasets
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    animation: { duration: 1000 },
+                    layout: { padding: { top: 30 } },
+                    plugins: { 
+                        legend: { labels: { color: '#f1f5f9', font: { size: 13, weight: '600' } }, position: 'bottom' },
+                        tooltip: { enabled: false } 
+                    }, 
+                    scales: { 
+                        y: { ticks: { color: '#94a3b8', stepSize: 10 }, grid: { color: 'rgba(56,189,248,0.08)' } }, 
+                        x: { ticks: { color: '#94a3b8', font: { weight: 'bold', size: 13 } }, grid: { display: false } } 
+                    } 
+                }
+            });
+
+            modoTexto.innerText = modos[0].nome;
+
+            setInterval(() => {
+                escudoTransicao.classList.add('ativo');
+
+                setTimeout(() => {
+                    indiceModo = (indiceModo + 1) % modos.length;
+                    meuGrafico.data.datasets = modos[indiceModo].datasets;
+                    modoTexto.innerText = modos[indiceModo].nome;
+                    meuGrafico.update();
+                }, 600);
+
+                setTimeout(() => {
+                    escudoTransicao.classList.remove('ativo');
+                }, 1200);
+
+            }, 9000);
+        }
+        iniciarGraficos();
+    </script>
+</body>
+</html>

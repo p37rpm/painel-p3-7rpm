@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Administração - P3 - 7ª RPM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0a192f; margin: 0; color: #f8fafc; display: flex; height: 100vh; overflow: hidden; }
+        
+        .form-container { width: 380px; background: #0f172a; padding: 25px; border-right: 1px solid rgba(56, 189, 248, 0.2); overflow-y: auto; }
+        .list-container { flex: 1; padding: 25px; background: #0b132b; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        h2 { color: #38bdf8; margin-top: 0; font-size: 18px; text-transform: uppercase; border-bottom: 2px solid #38bdf8; padding-bottom: 8px; }
+        label { font-size: 12px; color: #94a3b8; font-weight: bold; display: block; margin-bottom: 4px; }
+        input, select { width: 100%; margin-bottom: 12px; padding: 10px; border: 1px solid #1e3a8a; border-radius: 6px; background: #1e293b; color: #fff; font-size: 14px; }
+        
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 13px; }
+        .btn-salvar { background: #1e3a8a; color: white; }
+        .btn-salvar:hover { background: #3b82f6; }
+        .btn-cancelar { background: #475569; color: white; display: none; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        thead { background: #1e3a8a; color: #f8fafc; }
+        
+        .acoes-col { display: flex; gap: 5px; }
+        .btn-acao { padding: 5px 8px; font-size: 11px; border-radius: 4px; }
+        .btn-editar { background: #f59e0b; color: #000; }
+        .btn-excluir { background: #ef4444; color: #fff; }
+        #msg { text-align: center; font-weight: bold; font-size: 13px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2 id="titulo-form">Registar Evento</h2>
+        <form id="formReuniao" onsubmit="salvarOuAtualizar(event)">
+            <input type="hidden" id="edit-id">
+            
+            <label>Data:</label>
+            <input type="date" id="data" required>
+            
+            <label>Horário:</label>
+            <input type="time" id="horario" required>
+            
+            <label>Tipo de Evento:</label>
+            <select id="tipo" required>
+                <option value="SUPERVISÃO">SUPERVISÃO</option>
+                <option value="REUNIÃO">REUNIÃO</option>
+                <option value="APRESENTAÇÃO">APRESENTAÇÃO</option>
+                <option value="TREINAMENTO">TREINAMENTO</option>
+                <option value="SOLENIDADE">SOLENIDADE</option>
+                <option value="RESPOSTA">RESPOSTA</option>
+                <option value="APOIO/HIPOTECA">APOIO/HIPOTECA</option>
+            </select>
+            
+            <label>Assunto:</label>
+            <input type="text" id="assunto" placeholder="Assunto do evento" required>
+            
+            <label>Local:</label>
+            <input type="text" id="local" placeholder="Local" required>
+            
+            <label>Participantes:</label>
+            <input type="text" id="participantes" placeholder="Envolvidos" required>
+            
+            <div class="btn-group">
+                <button type="submit" class="btn-salvar" id="btn-acao-txt">Salvar</button>
+                <button type="button" class="btn-cancelar" id="btn-canc" onclick="limparFormulario()">Cancelar</button>
+            </div>
+        </form>
+        <p id="msg"></p>
+    </div>
+
+    <div class="list-container">
+        <h2>Eventos Cadastrados na Base</h2>
+        <div style="overflow-y: auto; flex: 1;">
+            <table>
+                <thead>
+                    <tr><th>Data</th><th>Horário</th><th>Tipo</th><th>Assunto</th><th>Ações</th></tr>
+                </thead>
+                <tbody id="tabela-admin-tbody">
+                    <tr><td colspan="5" align="center">A carregar registos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://cxzmlfdywswnyeejgxdy.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'sb_publishable_URMDJBv-xW1wmHyaqCE0dA_PzFUsbka';
+        const supabaseAdmin = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+
+        async function carregarEventosAdmin() {
+            const tbody = document.getElementById('tabela-admin-tbody');
+            const { data, error } = await supabaseAdmin.from('reunioes').select('*').order('data').order('horario');
+            
+            if (error) { tbody.innerHTML = `<tr><td colspan="5" align="center" style="color:#ef4444;">Erro ao carregar.</td></tr>`; return; }
+            if (!data || data.length === 0) { tbody.innerHTML = `<tr><td colspan="5" align="center">Sem registos.</td></tr>`; return; }
+
+            tbody.innerHTML = '';
+            data.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.data.split('-').reverse().join('/')}</td>
+                        <td>${item.horario}</td>
+                        <td><strong>${item.tipo_evento}</strong></td>
+                        <td>${item.assunto}</td>
+                        <td class="acoes-col">
+                            <button class="btn-acao btn-editar" onclick='preencherEdicao(${JSON.stringify(item)})'>Editar</button>
+                            <button class="btn-acao btn-excluir" onclick='excluirEvento(${item.id})'>Excluir</button>
+                        </td>
+                    </tr>`;
+            });
+        }
+        carregarEventosAdmin();
+
+        async function salvarOuAtualizar(event) {
+            event.preventDefault();
+            const id = document.getElementById('edit-id').value;
+            const msg = document.getElementById('msg');
+
+            const reuniao = {
+                data: document.getElementById('data').value,
+                horario: document.getElementById('horario').value,
+                tipo_evento: document.getElementById('tipo').value,
+                assunto: document.getElementById('assunto').value,
+                local: document.getElementById('local').value,
+                participantes: document.getElementById('participantes').value
+            };
+
+            let error;
+            if (id) {
+                // Atualizar
+                const res = await supabaseAdmin.from('reunioes').update(reuniao).eq('id', id);
+                error = res.error;
+            } else {
+                // Inserir novo
+                const res = await supabaseAdmin.from('reunioes').insert([reuniao]);
+                error = res.error;
+            }
+
+            if (error) {
+                msg.textContent = 'Erro: ' + error.message; msg.style.color = '#ef4444';
+            } else {
+                msg.textContent = id ? 'Atualizado com sucesso!' : 'Registado com sucesso!';
+                msg.style.color = '#22c55e';
+                limparFormulario();
+                carregarEventosAdmin();
+            }
+        }
+
+        function preencherEdicao(item) {
+            document.getElementById('edit-id').value = item.id;
+            document.getElementById('data').value = item.data;
+            document.getElementById('horario').value = item.horario;
+            document.getElementById('tipo').value = item.tipo_evento;
+            document.getElementById('assunto').value = item.assunto;
+            document.getElementById('local').value = item.local;
+            document.getElementById('participantes').value = item.participantes;
+            
+            document.getElementById('titulo-form').textContent = "Editar Evento";
+            document.getElementById('btn-acao-txt').textContent = "Atualizar";
+            document.getElementById('btn-canc').style.display = 'block';
+        }
+
+        function limparFormulario() {
+            document.getElementById('formReuniao').reset();
+            document.getElementById('edit-id').value = '';
+            document.getElementById('titulo-form').textContent = "Registar Evento";
+            document.getElementById('btn-acao-txt').textContent = "Salvar";
+            document.getElementById('btn-canc').style.display = 'none';
+            document.getElementById('msg').textContent = '';
+        }
+
+        async function excluirEvento(id) {
+            if (confirm('Tem certeza que deseja excluir este evento da TV?')) {
+                const { error } = await supabaseAdmin.from('reunioes').delete().eq('id', id);
+                if (error) {
+                    alert('Erro ao excluir: ' + error.message);
+                } else {
+                    carregarEventosAdmin();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
